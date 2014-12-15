@@ -1,0 +1,109 @@
+{{$data := ls "/services/elasticsearch_logging/hosts"}}
+# <source>
+#  type tail
+#  format none
+#  time_key time
+#  path /var/lib/docker/containers/*/*-json.log
+#  pos_file /var/lib/docker/containers/containers.log.pos
+#  time_format %Y-%m-%dT%H:%M:%S
+#  tag docker.container.*
+#</source>
+
+<source>
+  type monitor_agent
+  bind 0.0.0.0
+  port 24220
+</source>
+
+# for journalctl
+<source>
+  type tcp
+  port 5170
+  format json
+  source_host_key client_host
+  tag system
+</source>
+
+
+# FIXME: if the tag is the same as the incoming, this fails
+#        the fluentd-plugin-record_reformer needs to be patched
+<match system>
+  type record_reformer
+  renew_record false
+  enable_ruby false
+  remove_keys __CURSOR,__REALTIME_TIMESTAMP,__MONOTONIC_TIMESTAMP,_BOOT_ID,_UID,_GID,_CAP_EFFECTIVE,_SYSTEMD_SLICE,SYSLOG_IDENTIFIER,_SYSTEMD_CGROUP,_CMDLINE,_COMM
+  tag system.clean
+</match>
+
+{{ if getenv "DEBUG_FLUENTD" }}
+# useful for debugging!
+<match **>
+  type file
+  path /data/fluentd/output
+  append true
+  time_slice_format %Y%m%d
+  time_format %Y%m%dT%H%M%S%z
+  flush_interval 5s
+  utc
+</match>
+{{ end }}
+
+<match **>
+  type elasticsearch
+  log_level debug
+  include_tag_key true
+  {{ if $data }}
+  hosts {{ join $data "," }}
+  {{ else }}
+  host localhost
+  port 9200
+  {{ end }}
+
+  logstash_format true
+#  logstash_prefix 'fluentd'
+
+  reload_on_failure true
+  reload_connections true
+
+  # lets buffer to disk in case elasticsearch is not available right away
+  buffer_type file
+  buffer_path /data/fluentd/buffer/
+  # aggressively page to disk -- possible FIXME
+  flush_interval 5s
+
+  # Never wait longer than 5 minutes between retries.
+  max_retry_wait 300s
+  retry_wait 5s
+  # Disable the limit on the number of retries (retry forever).
+  disable_retry_limit
+</match>
+
+
+{{ if getenv "AWS_ACCESS_KEY_ID" }}
+<match **>
+   type s3
+   aws_key_id {{ getenv "AWS_ACCESS_KEY_ID" }}
+   aws_sec_key {{ getenv "AWS_SECRET_ACCESS_KEY }}
+   s3_bucket {{ getenv "AWS_S3_BUCKET" }}
+   s3_region {{ getenv "AWS_REGION" }}
+   use_ssl
+   path logs/
+   buffer_path /data/fluentd/s3/
+   time_slice_format %Y%m%d%H
+   time_slice_wait 10m
+   format json
+   include_time_key true
+   include_tag_key true
+   utc
+   buffer_chunk_limit 256m
+</match>
+
+<match **>
+   type cloudwatch_logs
+   log_group_name {{ getenv "LOG_GROUP_NAME" }}
+   log_stream_name {{ getenv "LOG_STREAM_NAME" }}
+   auto_create_stream true
+</match>
+{{ END }}
+
+

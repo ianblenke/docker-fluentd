@@ -1,0 +1,39 @@
+# see:
+#  http://serverfault.com/questions/614995/systemd-exits-from-bash-scripts-that-execute-commands-that-result-in-failure-in
+#  
+[Unit]
+Description=Send journalD logs to fluentD
+After=systemd-journald.service
+After=systemd-networkd.service
+After=fluentd-forwarder.service
+
+[Service]
+Restart=always
+RestartSec=30s
+
+# Get CoreOS environmental variables
+EnvironmentFile=/etc/environment
+Environment="FLUENTD_PORT=5170" "JOURNALD_POS=/tmp/fluentd_journald.pos"
+
+#lets setup the position, and backfill the logs to fluentd if we need to
+ExecStartPre=/bin/bash -c ' \
+  touch $JOURNALD_POS; \
+  last_pos=`cat $JOURNALD_POS`; \
+  if [ -z  $last_pos ]; then \
+    logger -t "fluentd" "journalD position not found; pre-loading all historical entries"; \
+    last_line=`journalctl -o json | tee ncat 0.0.0.0 $FLUENTD_PORT | tail -1`; \
+    logger -t "fluentd" "journalD loaded all historical entries"; \
+    echo $last_line | awk \'{print $4}\' | cut -d\\" -f2 > $JOURNALD_POS; \
+    last_pos=`cat $JOURNALD_POS`; \
+  fi; '
+
+# lets start streaming the logs to fluentd
+ExecStart=/bin/bash -c '\
+  logger -t "fluentd" "streaming journalD to fluentd"; \
+  last_pos=`cat $JOURNALD_POS`; \
+  journalctl -o json -f --after-cursor=$last_pos | ncat 0.0.0.0 $FLUENTD_PORT; '
+
+
+[X-Fleet]
+Global=true
+

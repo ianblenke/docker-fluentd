@@ -1,0 +1,30 @@
+[Unit]
+Description=FluentD Log Forwarding Service
+
+Requires=docker.service
+After=docker.service
+
+[Service]
+TimeoutStartSec=10m
+TimeoutStopSec=90s
+
+Restart=always
+RestartSec=10s
+
+# Get CoreOS environmental variables
+EnvironmentFile=/etc/environment
+
+ExecStartPre=-/usr/bin/docker kill %p
+ExecStartPre=-/usr/bin/docker rm -f %p
+ExecStartPre=/usr/bin/docker pull ianblenke/fluentd
+ExecStart=/usr/bin/docker run \
+				--name %p \
+				--net=host \
+				ianblenke/fluentd
+
+
+ExecStop=/usr/bin/docker stop -t 10 %p
+ExecStop=/usr/bin/docker rm %p
+
+[X-Fleet]
+Global=true
