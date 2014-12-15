@@ -55,7 +55,7 @@
   {{ if $data }}
   hosts {{ join $data "," }}
   {{ else }}
-  host localhost
+  host 172.17.42.1
   port 9200
   {{ end }}
 
