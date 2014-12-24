@@ -14,7 +14,6 @@ RUN gem install fluentd && \
 		fluent-plugin-record-reformer \
 		fluent-plugin-cloudwatch \
 		fluent-plugin-cloudwatch-logs \
-		fluent-plugin-aqmp2 \
 		fluent-plugin-s3
 
 ADD https://github.com/kelseyhightower/confd/releases/download/v0.7.1/confd-0.7.1-linux-amd64 /usr/local/bin/confd
