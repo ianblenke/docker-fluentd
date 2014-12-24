@@ -24,6 +24,15 @@
   tag system
 </source>
 
+# for nginx
+<source>
+  type tcp
+  port 5171
+  format nginx
+  source_host_key client_host
+  tag nginx
+</source>
+
 
 # FIXME: if the tag is the same as the incoming, this fails
 #        the fluentd-plugin-record_reformer needs to be patched
@@ -39,7 +48,7 @@
 # useful for debugging!
 <match **>
   type file
-  path /data/fluentd/output
+  path /data/fluentd/output/debug
   append true
   time_slice_format %Y%m%d
   time_format %Y%m%dT%H%M%S%z
