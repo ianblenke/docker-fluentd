@@ -17,7 +17,7 @@ RUN gem install fluentd && \
 		fluent-plugin-s3
 
 ADD https://github.com/kelseyhightower/confd/releases/download/v0.7.1/confd-0.7.1-linux-amd64 /usr/local/bin/confd
-ADD https://github.com/coreos/etcd/releases/download/v2.0.0-rc.1/etcd-v2.0.0-rc.1-linux-amd64 /usr/local/bin/etcd
+ADD https://github.com/coreos/etcd/releases/download/v0.4.6/etcd-v0.4.6-linux-amd64.tar.gz /usr/local/bin/
 
 RUN chmod +x /usr/local/bin/confd /usr/local/bin/etcd
 
