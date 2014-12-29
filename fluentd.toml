@@ -1,7 +1,0 @@
-[template]
-src	= "templates/fluentd.conf.tmpl"
-dest	= "/etc/fluent/fluent.conf"
-keys	= [
-    "/services/elasticsearch_logging/hosts/"
-]
-reload_cmd = "fluentd -vv -c /etc/fluent/fluent.conf -o /var/log/fluentd.log"
