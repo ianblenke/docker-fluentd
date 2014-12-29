@@ -111,8 +111,6 @@ stdout_events_enabled=true
 stderr_events_enabled=true
 EOF
 
-FLUENTD_CONFIG_TEMPLATE="/etc/confd/templates/fluentd.tmpl"
-
 # Dynamically generate the confd configuration toml for fluentd
 
 cat <<TOML > /etc/confd/conf.d/fluentd.conf.toml
@@ -128,7 +126,7 @@ TOML
 
 # Dynamically initially auto-generate the confd template for the fluentd config
 
-cat <<TMPL > $FLUENTD_CONFIG_TEMPLATE
+cat <<TMPL > /etc/confd/templates/fluentd.tmpl
 {{\$data := ls "${ETCD_DIR_FOR_ELASTICSEARCH_HOSTS}"}}
 <source>
   type monitor_agent
@@ -217,52 +215,6 @@ cat <<TMPL > $FLUENTD_CONFIG_TEMPLATE
 </match>
 {{ END }}
 TMPL
-
-# Generate config file from oneline "property" list format if present
-if [ -n "$FLUENTD_CONFIG_ONELINE" ]; then
-  previous=()
-  (
-    IFS=';'
-    list=$FLUENTD_CONFIG_ONELINE
-    for var in $list ;
-    do
-      echo $var
-    done | while read line ; do
-      IFS=' '; key=$(echo "$line" | cut -d'=' -f1) ;
-      value=$(echo "$line" | cut -d'=' -f2-) ;
-      IFS='.' components=($key)
-      IFS=' ';
-      # section = input, filter, output
-      section=${components[0]}
-      grouping=${components[1]}
-      property=${components[2]}
-  
-      if [ "${section}" != "${previous[0]}" ]; then
-        if [ -n "${previous[1]}" ]; then
-          echo "  }"
-        fi
-        if [ -n "${previous[0]}" ]; then
-          echo "}"
-        fi
-        previous=()
-        echo "${section} {"
-      fi
-  
-      if [ "${grouping}" != "${previous[1]}" ]; then
-        if [ -n "${previous[1]}" ]; then
-          echo "  }"
-        fi
-        echo "  ${grouping} {"
-      fi
-  
-      echo "    ${property} => ${value}"
-  
-      previous=(${components[*]});
-    done
-    echo "  }"
-    echo "}"
-  ) > $FLUENTD_CONFIG_TEMPLATE
-fi
 
 # start supervisord
 /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
