@@ -5,7 +5,7 @@ RUN echo "gem: --no-document --no-ri --no-rdoc\n" >> ~/.gemrc
 
 # Install prerequisites.
 RUN apt-get update && \
-    apt-get install -yq libcurl4-openssl-dev supervisord && \
+    apt-get install -yq libcurl4-openssl-dev supervisor && \
     apt-get clean
 
 RUN gem install fluentd && \
