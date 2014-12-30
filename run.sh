@@ -14,6 +14,8 @@ OUTPUT_PATH=${OUTPUT_PATH:-${VOLUME_PATH}/output}
 SUPERVISORD_LOGS=${SUPERVISORD_LOGS:-${VOLUME_PATH}/supervisor}
 DEBUG_LOG=${DEBUG_LOG:-/data/fluentd/output/debug}
 
+CONFD_ARGS="${CONFD_ARGS:--quiet=true}"
+
 # Ensure the paths exist
 mkdir -p /etc/fluent $OUTPUT_PATH $BUFFER_PATH $S3_PATH $SUPERVISORD_LOGS
 
@@ -90,7 +92,7 @@ EOF
 
   cat > /etc/supervisor/conf.d/etcdctl.conf <<EOF
 [program:etcdctl]
-command=/bin/bash -xec /etcdctl.sh
+command=/bin/bash /etcdctl.sh
 priority=20
 numprocs=1
 autostart=true
@@ -119,14 +121,14 @@ cat > /confd.sh <<EOF
 #!/bin/bash
 source /.profile
 while ! etcdctl ls / > /dev/null 2>&1 ; do echo Waiting for etcd to start; sleep 5; done ;
-exec /usr/local/bin/confd -watch -quiet=false -debug -node ${ETCD_ADDR} -config-file /etc/confd/conf.d/fluentd.conf.toml
+exec /usr/local/bin/confd -watch ${CONFD_ARGS} -node ${ETCD_ADDR} -config-file /etc/confd/conf.d/fluentd.conf.toml
 EOF
 
 chmod 755 /confd.sh
 
 cat > /etc/supervisor/conf.d/confd.conf <<EOF
 [program:confd]
-command=/bin/bash -xec /confd.sh
+command=/bin/bash /confd.sh
 priority=30
 numprocs=1
 autostart=true
@@ -146,13 +148,22 @@ dest	= "/etc/fluent/fluent.conf"
 keys	= [
     "${ETCD_DIR_FOR_ELASTICSEARCH_HOSTS}/"
 ]
-check_cmd = "/usr/local/bundle/bin/fluentd -vv --dry-run -c {{ .src }}"
+check_cmd = "/usr/local/bundle/bin/fluentd -q --dry-run -c {{ .src }}"
 reload_cmd = "/usr/bin/supervisorctl restart fluentd"
 TOML
 
+# This is to stop fluentd from logging to stdout
+# As logspout is likely tailing docker's logs, we must do this to avoid a feedback loop.
+cat <<WRAPPER > /fluentd.sh
+#!/bin/bash
+exec /usr/local/bundle/bin/fluentd -q -c /etc/fluent/fluent.conf > /dev/null
+WRAPPER
+
+chmod 755 /fluentd.sh
+
 cat <<FLUENTD > /etc/supervisor/conf.d/fluentd.conf
 [program:fluentd]
-command=/usr/local/bundle/bin/fluentd -q -c /etc/fluent/fluent.conf
+command=/bin/bash /fluentd.sh
 priority=40
 numprocs=1
 autostart=true
