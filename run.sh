@@ -33,17 +33,20 @@ if [ -n "${ELASTICSEARCH_PORT_9200_TCP_ADDR}" ]; then
 fi
 
 # Prepare default local etcd
-export ETCD_DIR_FOR_ELASTICSEARCH_HOSTS="${ETCD_DIR_FOR_ELASTICSEARCH_HOSTS:-/services/elasticsearch_logging/hosts}"
-export ETCD_PORT=${ETCD_PORT:-4001}
-export ETCD_IP=${ETCD_IP:-127.0.0.1}
-export ETCD_ADDR=${ETCD_ADDR:-${ETCD_IP}:${ETCD_PORT}}
-export ETCD_IP=$(echo $ETCD_ADDR | cut -d: -f1) # Recover ETCD_IP in case only ETCD_ADDR was specified
-export ETCD_BIND_ADDR=${ETCD_ADDR}
-export ETCD_PEER_ADDR=${ETCD_PEER_ADDR:-${ETCD_IP}}:${ETCD_PEER_PORT:-7001}
-export ETCD_PEER_BIND_ADDR=${ETCD_PEER_ADDR}
+ETCD_DIR_FOR_ELASTICSEARCH_HOSTS="${ETCD_DIR_FOR_ELASTICSEARCH_HOSTS:-/services/elasticsearch_logging/hosts}"
+ETCD_PORT=${ETCD_PORT:-4001}
+ETCD_IP=${ETCD_IP:-127.0.0.1}
+ETCD_ADDR=${ETCD_ADDR:-${ETCD_IP}:${ETCD_PORT}}
+ETCD_IP=$(echo $ETCD_ADDR | cut -d: -f1) # Recover ETCD_IP in case only ETCD_ADDR was specified
+ETCD_BIND_ADDR=${ETCD_ADDR}
+ETCD_PEER_ADDR=${ETCD_IP}:${ETCD_PEER_PORT:-7001}
+ETCD_PEER_BIND_ADDR=${ETCD_PEER_ADDR}
+
+export ETCD_DIR_FOR_ELASTICSEARCH_HOSTS ETCD_PORT ETCD_IP ETCD_ADDR ETCD_IP ETCD_BIND_ADDR ETCD_PEER_ADDR ETCD_PEER_BIND_ADDR
 
 # Point etcdctl at the etcd address
-export ETCDCTL_PEERS=${ETCD_ADDR}
+ETCDCTL_PEERS=${ETCD_ADDR}
+export ETCDCTL_PEERS
 
 # If no external etcd is referenced, start a local one
 if [ "${ETCD_ADDR}" = "127.0.0.1:4001" ]; then
@@ -102,7 +105,7 @@ EOF
 # Prepare supervisord program:confd
 cat > /etc/supervisor/conf.d/confd.conf <<EOF
 [program:confd]
-command=/usr/local/bin/confd -watch -quiet=false -debug -node $ETCD -config-file /etc/confd/conf.d/fluentd.toml
+command=/usr/local/bin/confd -watch -quiet=false -debug -node ${ETCD_ADDR} -config-file /etc/confd/conf.d/fluentd.conf.toml
 priority=30
 numprocs=1
 autostart=true
@@ -112,6 +115,8 @@ stderr_events_enabled=true
 EOF
 
 # Dynamically generate the confd configuration toml for fluentd
+
+mkdir -p /etc/confd/conf.d/
 
 cat <<TOML > /etc/confd/conf.d/fluentd.conf.toml
 [template]
@@ -125,6 +130,8 @@ reload_cmd = "/usr/bin/supervisorctl fluentd restart"
 TOML
 
 # Dynamically initially auto-generate the confd template for the fluentd config
+
+mkdir -p /etc/confd/templates/
 
 cat <<TMPL > /etc/confd/templates/fluentd.tmpl
 {{\$data := ls "${ETCD_DIR_FOR_ELASTICSEARCH_HOSTS}"}}
@@ -215,6 +222,8 @@ cat <<TMPL > /etc/confd/templates/fluentd.tmpl
 </match>
 {{ END }}
 TMPL
+
+env > /.profile
 
 # start supervisord
 /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
