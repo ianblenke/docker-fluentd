@@ -77,13 +77,25 @@ fi
 if [ -n "$ES_HOST" ]; then
 
   # configure supervisord to initially populate the standalone etcd pointing at the lone ElasticSearch host
+
+  cat > /etcdctl.sh <<EOF
+#!/bin/bash
+source /.profile
+while ! etcdctl ls / > /dev/null 2>&1 ; do echo Waiting for etcd to start; sleep 5; done ;
+export ETCDCTL_PEERS=${ETCDCTL_PEERS};
+echo ${ES_HOST};${ES_PORT} | etcdctl set ${ETCD_DIR_FOR_ELASTICSEARCH_HOSTS}/${ES_HOST}"
+EOF
+
+  chmod 755 /etcdctl.sh
+
   cat > /etc/supervisor/conf.d/etcdctl.conf <<EOF
 [program:etcdctl]
-command=/bin/bash -c "export ETCDCTL_PEERS=${ETCDCTL_PEERS}; fullpath=''; IFS=/ dir=(${ETCD_DIR_FOR_ELASTICSEARCH_HOSTS}); IFS=' '; for subdir in \${dir[*]} ; do fullpath=\$fullpath/\$subdir; echo etcdctl setDir \$fullpath; done; etcdctl ${ETCD_DIR_FOR_ELASTICSEARCH_HOSTS}/${ES_HOST} ${ES_HOST}:${ES_PORT}"
+command=/bin/bash -xec /etcdctl.sh
 priority=20
 numprocs=1
 autostart=true
 autorestart=false
+exitcodes=0,4
 stdout_events_enabled=true
 stderr_events_enabled=true
 EOF
@@ -103,9 +115,18 @@ result_handler = supervisor_stdout:event_handler
 EOF
 
 # Prepare supervisord program:confd
+cat > /confd.sh <<EOF
+#!/bin/bash
+source /.profile
+while ! etcdctl ls / > /dev/null 2>&1 ; do echo Waiting for etcd to start; sleep 5; done ;
+exec /usr/local/bin/confd -watch -quiet=false -debug -node ${ETCD_ADDR} -config-file /etc/confd/conf.d/fluentd.conf.toml
+EOF
+
+chmod 755 /confd.sh
+
 cat > /etc/supervisor/conf.d/confd.conf <<EOF
 [program:confd]
-command=/usr/local/bin/confd -watch -quiet=false -debug -node ${ETCD_ADDR} -config-file /etc/confd/conf.d/fluentd.conf.toml
+command=/bin/bash -xec /confd.sh
 priority=30
 numprocs=1
 autostart=true
@@ -120,14 +141,33 @@ mkdir -p /etc/confd/conf.d/
 
 cat <<TOML > /etc/confd/conf.d/fluentd.conf.toml
 [template]
-src	= "templates/fluentd.tmpl"
+src	= "fluentd.tmpl"
 dest	= "/etc/fluent/fluent.conf"
 keys	= [
     "${ETCD_DIR_FOR_ELASTICSEARCH_HOSTS}/"
 ]
-check_cmd = "fluentd -vv --dry-run -c {{ .src }}"
-reload_cmd = "/usr/bin/supervisorctl fluentd restart"
+check_cmd = "/usr/local/bundle/bin/fluentd -vv --dry-run -c {{ .src }}"
+reload_cmd = "/usr/bin/supervisorctl restart fluentd"
 TOML
+
+cat <<FLUENTD > /etc/supervisor/conf.d/fluentd.conf
+[program:fluentd]
+command=/usr/local/bundle/bin/fluentd -c /etc/fluent/fluent.conf
+priority=40
+numprocs=1
+autostart=true
+autorestart=true
+stdout_events_enabled=true
+stderr_events_enabled=true
+FLUENTD
+
+cat <<EOF > /etc/fluent/fluent.conf
+<source>
+  type monitor_agent
+  bind 0.0.0.0
+  port 24220
+</source>
+EOF
 
 # Dynamically initially auto-generate the confd template for the fluentd config
 
@@ -199,7 +239,7 @@ cat <<TMPL > /etc/confd/templates/fluentd.tmpl
 <match **>
    type s3
    aws_key_id {{ getenv "AWS_ACCESS_KEY_ID" }}
-   aws_sec_key {{ getenv "AWS_SECRET_ACCESS_KEY }}
+   aws_sec_key {{ getenv "AWS_SECRET_ACCESS_KEY" }}
    s3_bucket {{ getenv "AWS_S3_BUCKET" }}
    s3_region {{ getenv "AWS_REGION" }}
    use_ssl
@@ -213,6 +253,7 @@ cat <<TMPL > /etc/confd/templates/fluentd.tmpl
    utc
    buffer_chunk_limit 256m
 </match>
+{{ end }}
 {{ if getenv "LOG_GROUP_NAME" }}
 <match **>
    type cloudwatch_logs
@@ -220,10 +261,10 @@ cat <<TMPL > /etc/confd/templates/fluentd.tmpl
    log_stream_name {{ getenv "LOG_STREAM_NAME" }}
    auto_create_stream true
 </match>
-{{ END }}
+{{ end }}
 TMPL
 
-env > /.profile
+env | xargs -l1 echo export > /.profile
 
 # start supervisord
 /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
