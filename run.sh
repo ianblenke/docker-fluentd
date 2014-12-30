@@ -83,7 +83,7 @@ if [ -n "$ES_HOST" ]; then
 source /.profile
 while ! etcdctl ls / > /dev/null 2>&1 ; do echo Waiting for etcd to start; sleep 5; done ;
 export ETCDCTL_PEERS=${ETCDCTL_PEERS};
-echo ${ES_HOST};${ES_PORT} | etcdctl set ${ETCD_DIR_FOR_ELASTICSEARCH_HOSTS}/${ES_HOST}"
+echo ${ES_HOST}:${ES_PORT} | etcdctl set ${ETCD_DIR_FOR_ELASTICSEARCH_HOSTS}/${ES_HOST}
 EOF
 
   chmod 755 /etcdctl.sh
