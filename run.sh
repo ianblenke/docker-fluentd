@@ -152,7 +152,7 @@ TOML
 
 cat <<FLUENTD > /etc/supervisor/conf.d/fluentd.conf
 [program:fluentd]
-command=/usr/local/bundle/bin/fluentd -c /etc/fluent/fluent.conf
+command=/usr/local/bundle/bin/fluentd -q -c /etc/fluent/fluent.conf
 priority=40
 numprocs=1
 autostart=true

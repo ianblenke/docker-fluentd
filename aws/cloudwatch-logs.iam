@@ -8,8 +8,8 @@
         "s3:GetObject"
       ],
       "Resource": [
-        "arn:aws:logs:us-east-1:*:*",
-        "arn:aws:s3:::*"
+        "arn:aws:logs:::log-group*",
+        "arn:aws:s3:::bucket*"
       ]
     }
   ]
