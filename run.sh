@@ -212,6 +212,21 @@ cat <<TMPL > /etc/confd/templates/fluentd.tmpl
   remove_keys __CURSOR,__REALTIME_TIMESTAMP,__MONOTONIC_TIMESTAMP,_BOOT_ID,_UID,_GID,_CAP_EFFECTIVE,_SYSTEMD_SLICE,SYSLOG_IDENTIFIER,_SYSTEMD_CGROUP,_CMDLINE,_COMM
   tag system.clean
 </match>
+{{ if getenv "LOG_DOCKER_JSON" }}
+<source>
+  type tail
+  path /var/lib/docker/containers/*/*-json.log
+  pos_file /var/log/fluentd-docker.pos
+  time_format %Y-%m-%dT%H:%M:%S
+  tag docker.*
+  format json
+</source>
+<match docker.var.lib.docker.containers.*.*.log>
+  type record_reformer
+  container_id ${tag_parts[5]}
+  tag docker.all
+</match>
+{{ end }}
 {{ if getenv "DEBUG_FLUENTD" }}
 <match **>
   type file
