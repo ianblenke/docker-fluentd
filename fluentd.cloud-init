@@ -1,0 +1,137 @@
+#cloud-config
+
+coreos:
+  units:
+    - name: fluentd-create-fleet-units.service
+      command: start
+      content: |
+        [Unit]
+        After=docker.service
+        ConditionFileIsExecutable=/tmp/fluentd-create-fleet-units.sh
+        ConditionFileNotEmpty=/tmp/fluentd@.service
+
+        [Service]
+        EnvironmentFile=/etc/environment
+        ExecStart=/tmp/fluentd-create-fleet-units.sh
+        RemainAfterExit=no
+        Type=oneshot
+write_files:
+  - path: /tmp/fluentd-create-fleet-units.sh
+    permissions: '0755'
+    owner: root
+    content: |
+      #!/bin/bash
+      set -ex
+      cp -f /tmp/fluentd@.service /tmp/fluentd@$(hostname).service
+      cp -f /tmp/fluentd-journal-pos@.service /tmp/fluentd-journal-pos@$(hostname).service
+      cp -f /tmp/fluentd-journal@.service /tmp/fluentd-journal@$(hostname).service
+      ( echo -n MachineID=; cat /etc/machine-id ) >> /tmp/fluentd@$(hostname).service
+      ( echo -n MachineID=; cat /etc/machine-id ) >> /tmp/fluentd-journal-pos@$(hostname).service
+      ( echo -n MachineID=; cat /etc/machine-id ) >> /tmp/fluentd-journal@$(hostname).service
+      /usr/bin/docker pull ianblenke/fluentd:latest
+      /usr/bin/fleetctl start /tmp/fluentd@$(hostname).service
+      /usr/bin/fleetctl start /tmp/fluentd-journal-pos@$(hostname).service
+      /usr/bin/fleetctl start /tmp/fluentd-journal@$(hostname).service
+  - path: /tmp/fluentd@.service
+    permissions: '0644'
+    owner: root
+    content: |
+      [Unit]
+      Description=FluentD Log Forwarding Service
+
+      Requires=docker.service
+      After=docker.service
+
+      [Service]
+      TimeoutStartSec=10m
+      TimeoutStopSec=90s
+
+      Restart=always
+      RestartSec=10s
+
+      # Get CoreOS environmental variables
+      EnvironmentFile=/etc/environment
+
+      ExecStartPre=-/usr/bin/docker kill %p
+      ExecStartPre=-/usr/bin/docker rm -f %p
+      ExecStartPre=/usr/bin/docker pull ianblenke/fluentd
+      ExecStart=/usr/bin/docker run \
+                                --name %p \
+                                --net=host \
+                                -e ETCD_IP=172.17.42.1 \
+                                -e ES_HOST=172.17.42.1 \
+                                ianblenke/fluentd
+
+      ExecStop=/usr/bin/docker stop -t 10 %p
+      ExecStop=/usr/bin/docker rm %p
+
+      [X-Fleet]
+  - path: /tmp/fluentd-journal-pos@.service
+    permissions: '0644'
+    owner: root
+    content: |
+      [Unit]
+      Description=Update journalD pos of logs sent to fluentD
+      After=journald-fluentd.service
+
+      [Service]
+      Restart=always
+      RestartSec=30s
+
+      # Get CoreOS environmental variables
+      EnvironmentFile=/etc/environment
+      Environment="FLUENTD_PORT=5170" "JOURNALD_POS=/tmp/fluentd_journald.pos"
+
+      # lets go through and update our stored position in the journal.  This will
+      # lead to some duplicates being sent, but that is fine as we can clean them
+      # up upstream.  Dups aren't the end of the world; but losing data is!
+      ExecStart=/bin/bash -c '\
+        while true; do \
+          logger -t "fluentd" "updating journalD position"; \
+          last_line=`journalctl -r -n 1 -o json`; \
+          sleep 5s; \
+          echo $last_line | awk \'{print $4}\' | cut -d\\" -f2 > $JOURNALD_POS; \
+          sleep 1m; \
+        done; '
+
+      [X-Fleet]
+  - path: /tmp/fluentd-journal@.service
+    permissions: '0644'
+    owner: root
+    content: |
+      # see:
+      #  http://serverfault.com/questions/614995/systemd-exits-from-bash-scripts-that-execute-commands-that-result-in-failure-in
+      #
+      [Unit]
+      Description=Send journalD logs to fluentD
+      After=systemd-journald.service
+      After=systemd-networkd.service
+      After=fluentd-forwarder.service
+
+      [Service]
+      Restart=always
+      RestartSec=30s
+
+      # Get CoreOS environmental variables
+      EnvironmentFile=/etc/environment
+      Environment="FLUENTD_PORT=5170" "JOURNALD_POS=/tmp/fluentd_journald.pos"
+
+      #lets setup the position, and backfill the logs to fluentd if we need to
+      ExecStartPre=/bin/bash -c ' \
+        touch $JOURNALD_POS; \
+        last_pos=`cat $JOURNALD_POS`; \
+        if [ -z  $last_pos ]; then \
+          logger -t "fluentd" "journalD position not found; pre-loading all historical entries"; \
+          last_line=`journalctl -o json | tee ncat 0.0.0.0 $FLUENTD_PORT | tail -1`; \
+          logger -t "fluentd" "journalD loaded all historical entries"; \
+          echo $last_line | awk \'{print $4}\' | cut -d\\" -f2 > $JOURNALD_POS; \
+          last_pos=`cat $JOURNALD_POS`; \
+        fi; '
+
+      # lets start streaming the logs to fluentd
+      ExecStart=/bin/bash -c '\
+        logger -t "fluentd" "streaming journalD to fluentd"; \
+        last_pos=`cat $JOURNALD_POS`; \
+        journalctl -o json -f --after-cursor=$last_pos | ncat 0.0.0.0 $FLUENTD_PORT; '
+
+      [X-Fleet]
