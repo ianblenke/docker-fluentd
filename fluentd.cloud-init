@@ -61,6 +61,8 @@ write_files:
                                 -e ETCD_IP=172.17.42.1 \
                                 -e ES_HOST=172.17.42.1 \
                                 -e LOG_DOCKER_JSON=true \
+                                -v /var/log:/var/log \
+                                -v /var/lib/docker/containers:/var/lib/docker/containers \
                                 ianblenke/fluentd
 
       ExecStop=/usr/bin/docker stop -t 10 %p
