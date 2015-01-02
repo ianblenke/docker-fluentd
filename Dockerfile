@@ -36,11 +36,9 @@ RUN chmod +x /run.sh
 # expose in_tcp so we can pipe things like journald to fluentd
 Expose 5170 5170/udp
 
-VOLUME '/data'
+VOLUME /data
 
 #USER daemon
 
 CMD ["/run.sh"]
-
-
 

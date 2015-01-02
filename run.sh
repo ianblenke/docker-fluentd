@@ -223,7 +223,14 @@ cat <<TMPL > /etc/confd/templates/fluentd.tmpl
 </source>
 <match docker.var.lib.docker.containers.*.*.log>
   type record_reformer
-  container_id ${tag_parts[5]}
+  container_id \${tag_parts[5]}
+  remove_keys log
+  renew_record false
+  enable_ruby false
+  <record>
+    _HOSTNAME \${hostname}
+    _MESSAGE \${log}
+  </record>
   tag docker.all
 </match>
 {{ end }}
