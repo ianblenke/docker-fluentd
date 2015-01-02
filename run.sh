@@ -292,5 +292,8 @@ TMPL
 
 env | xargs -l1 echo export > /.profile
 
+# supervisord will error out if this does not exist (think: mounted volume)
+mkdir -p /var/log/supervisor
+
 # start supervisord
 /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
